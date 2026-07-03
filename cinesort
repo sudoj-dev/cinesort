@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+
+### ============ ###
+### = cinesort = ###
+### ============ ###
+
+from pathlib import Path
+from guessit import guessit
+import shutil
+
+movies = Path("/path/to/your/movies")
+
+VIDEO_EXTENSIONS = {
+    ".mkv",
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".m4v",
+    ".wmv",
+    ".ts",
+    ".mpg",
+    ".mpeg",
+}
+
+needswork = []
+needsreview = []
+fin = []
+lint = []
+# needswork is for organising
+# needsreview is for manual review of ambiguous cases
+# fin is just a receipt list to show changes that have been successfully made
+# lint is for loose things that aren't movies - included in receipt, but not handled
+
+def format_guessit(filename: str):
+    info = guessit(filename)
+
+    title = info.get("title")
+    year = info.get("year")
+
+    if not title or not year:
+        return None
+    
+    return f"{year} - {title}"
+
+# above function does the role of a regex and string manipulation
+# discards information that we don't care about as well
+
+# ==================== #
+# = taking inventory = #
+# ==================== #
+
+for item in movies.iterdir():
+    if item.is_file():
+        if item.suffix.lower() in VIDEO_EXTENSIONS:
+            needswork.append(item)
+        else:
+            lint.append(item.name)   
+
+    elif item.is_dir():
+        if item.name[:4].isdigit() and " - " in item.name:
+            continue
+        # checking if folder name already fits formatting - completely ignored
+
+        videos = 0
+        for f in item.iterdir():
+        # checking folder for videos
+
+            if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS:
+                videos += 1
+                if videos > 1:
+                    needsreview.append(item.name)
+                    break
+                    # if there's more than 1 video, manually review it
+
+        if videos == 1:
+            needswork.append(item)
+            # only 1 video? good to go
+
+        elif videos == 0:
+            lint.append(item.name)
+
+# ============== #
+# = processing = #
+# ============== #
+
+for item in needswork:
+    if item.is_file():
+        new_name = format_guessit(item.name)
+        # creates the formatted name from guessit
+
+        if not new_name:
+            needsreview.append(item.name)
+            continue
+            # handles cases where guessit formatting fails
+
+        dest = item.parent / new_name
+        dest.mkdir(exist_ok=True)
+        shutil.move(str(item), str(dest/item.name))
+        fin.append(new_name)
+        # uses new name to make the parent folder
+        # before moving the file into it
+    
+    else:
+        video_file = next(f for f in item.iterdir()
+            if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
+        )
+        # walking through contents until video is found
+
+        new_name = format_guessit(video_file.name)
+        if not new_name:
+            needsreview.append(item.name)
+            continue
+            # if video file couldn't be renamed, send to manual review
+
+        dest_dir = item.parent / new_name
+        if dest_dir.exists():
+            needsreview.append(item.name)
+            continue
+            # important - prevents script from tripping over itself
+
+        item.rename(item.parent / new_name)
+        fin.append(new_name)
+        # renaming parent folder
+
+# = itemized receipt = #
+
+print("These were sorted:")
+for item in fin:
+    print(item)
+print("\nNeeds review:")
+for item in needsreview:
+    print(item)
+print("\nPocket lint:")
+for item in lint:
+    print(item)
